@@ -1,11 +1,10 @@
 // ===== Config =====
-const BASE_DOMAIN = "docker.milu.moe";
-const AUTH_DOMAIN = "auth-" + BASE_DOMAIN;
+const BASE_DOMAIN = "ghcr.milu.moe";
 const CDN_DOMAIN  = "production-" + BASE_DOMAIN;
 
-const UPSTREAM_REGISTRY = "https://registry-1.docker.io";
-const UPSTREAM_AUTH     = "https://auth.docker.io";
-const UPSTREAM_CDN      = "https://production.cloudflare.docker.com";
+const UPSTREAM_REGISTRY = "https://ghcr.io";
+const UPSTREAM_AUTH     = "https://ghcr.io/token";
+const UPSTREAM_CDN      = "https://pkg-containers.githubusercontent.com";
 
 // ==================
 export default {
@@ -14,20 +13,21 @@ export default {
     let target = null;
 
     if (url.hostname === BASE_DOMAIN) {
-      // Registry API
-      target = new URL(UPSTREAM_REGISTRY + url.pathname + url.search);
-    } else if (url.hostname === AUTH_DOMAIN) {
-      // Auth API
-      target = new URL(UPSTREAM_AUTH + url.pathname + url.search);
+      if (url.pathname.startsWith("/auth")) {
+        // Auth API
+        target = new URL(UPSTREAM_AUTH + url.pathname.replace("/auth", "") + url.search);
+      } else {
+        // Registry API
+        target = new URL(UPSTREAM_REGISTRY + url.pathname + url.search);
+      }
     } else if (url.hostname === CDN_DOMAIN) {
       // 镜像层 CDN
       target = new URL(UPSTREAM_CDN + url.pathname + url.search);
     } else {
       // 默认欢迎页
       return new Response(
-        `<h1>🎉 Cloudflare DockerHub Proxy is Running!</h1>
+        `<h1>🎉 Cloudflare ghcr Proxy is Running!</h1>
          <p>Base: ${BASE_DOMAIN}</p>
-         <p>Auth: ${AUTH_DOMAIN}</p>
          <p>CDN: ${CDN_DOMAIN}</p>`,
         { headers: { "content-type": "text/html; charset=utf-8" } }
       );
@@ -37,7 +37,7 @@ export default {
     const newRequest = new Request(target, request);
     newRequest.headers.set("Host", target.hostname);
 
-    // 保证流式传输
+    // 流式传输
     const response = await fetch(newRequest);
 
     // 修改响应头
@@ -49,7 +49,7 @@ export default {
         "WWW-Authenticate",
         newHeaders.get("WWW-Authenticate").replace(
           UPSTREAM_AUTH,
-          "https://" + AUTH_DOMAIN
+          "https://" + BASE_DOMAIN + "/auth"
         )
       );
     }
