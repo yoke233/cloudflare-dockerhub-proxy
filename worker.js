@@ -11,6 +11,16 @@ const UPSTREAM_CDN      = "https://production.cloudflare.docker.com";
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/") {
+      const html =
+        `<h1>🎉 Cloudflare Docker Proxy is Running!</h1>
+         <p>Base: ${BASE_DOMAIN}</p>
+         <p>Auth: ${AUTH_DOMAIN}</p>
+         <p>CDN: ${CDN_DOMAIN}</p>`;
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+
     let target = null;
 
     if (url.hostname === BASE_DOMAIN) {
@@ -22,15 +32,6 @@ export default {
     } else if (url.hostname === CDN_DOMAIN) {
       // 镜像层 CDN
       target = new URL(UPSTREAM_CDN + url.pathname + url.search);
-    } else {
-      // 默认欢迎页
-      return new Response(
-        `<h1>🎉 Cloudflare DockerHub Proxy is Running!</h1>
-         <p>Base: ${BASE_DOMAIN}</p>
-         <p>Auth: ${AUTH_DOMAIN}</p>
-         <p>CDN: ${CDN_DOMAIN}</p>`,
-        { headers: { "content-type": "text/html; charset=utf-8" } }
-      );
     }
 
     // 构造转发请求
