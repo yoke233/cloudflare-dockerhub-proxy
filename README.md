@@ -1,27 +1,47 @@
-# Cloudflare Docker Hub Proxy
+# Cloudflare Docker Hub + GHCR Proxy
 
-A simple hub.docker.com proxy on cloudflare worker
+A Cloudflare Worker proxy for Docker Hub and GHCR.
 
 [中文版README](README_zh.md)
 
+## Features
+
+- One Worker supports both Docker Hub and GHCR
+- Rewrites `WWW-Authenticate` and CDN `Location` headers
+- Domain settings can be configured via Wrangler vars
+
 ## Setup
 
-1. Deploy the `worker.js` to your Cloudflare Workers
-2. Update the domain constants in `worker.js` with your domains
-3. Bind custom domains to your Worker:
-   - `your-domain.com` (base registry domain)
-   - `auth-your-domain.com` (authentication domain)
-   - `production-your-domain.com` (CDN domain)
+1. Copy `wrangler.example.jsonc` to `wrangler.jsonc`
+2. Replace `your-domain.com` and route domains with your own
+3. Deploy:
+
+```bash
+npx wrangler deploy
+```
 
 ## Usage
 
-Configure your Docker client to use your proxy domains instead of Docker Hub directly.
+Bind these custom domains to one Worker:
 
-## Configuration
-```javascript
-const BASE_DOMAIN = "your-domain.com";
-const AUTH_DOMAIN = "auth-" + BASE_DOMAIN;
-const CDN_DOMAIN  = "production-" + BASE_DOMAIN;
+- `docker.your-domain.com`
+- `auth-docker.your-domain.com`
+- `production-docker.your-domain.com`
+- `ghcr.your-domain.com`
+- `production-ghcr.your-domain.com`
+
+Docker daemon mirror example:
+
+```json
+{
+  "registry-mirrors": ["https://docker.your-domain.com"]
+}
+```
+
+GHCR example:
+
+```bash
+docker pull ghcr.your-domain.com/<owner>/<repo>:<tag>
 ```
 
 ## License

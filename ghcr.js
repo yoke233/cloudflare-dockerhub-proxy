@@ -1,5 +1,5 @@
 // ===== Config =====
-const BASE_DOMAIN = "ghcr.milu.moe";
+const BASE_DOMAIN = "ghcr.your-domain.com";
 const CDN_DOMAIN  = "production-" + BASE_DOMAIN;
 
 const UPSTREAM_REGISTRY = "https://ghcr.io";

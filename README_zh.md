@@ -1,25 +1,45 @@
-# Cloudflare Docker Hub Proxy
+# Cloudflare Docker Hub + GHCR Proxy
 
-基于 Cloudflare Worker 的简单 hub.docker.com 代理服务
+一个基于 Cloudflare Worker 的 Docker Hub + GHCR 代理。
 
-## 使用
+## 特性
 
-1. 将 `worker.js` 部署到您的 Cloudflare Worker
-2. 根据您的域名更新 `worker.js` 中的配置部分
-3. 将自定义域名绑定到您的 Worker:
-   - `your-domain.com` (基础注册域名)
-   - `auth-your-domain.com` (身份验证域名)
-   - `production-your-domain.com` (CDN 域名)
+- 一个 Worker 同时支持 Docker Hub 和 GHCR
+- 自动改写 `WWW-Authenticate` 与 CDN `Location` 头
+- 支持通过 Wrangler 变量配置域名
 
-## Usage
+## 部署
 
-配置您的 Docker 客户端，使其使用您的镜像，而不是直接使用 Docker Hub
+1. 复制 `wrangler.example.jsonc` 为 `wrangler.jsonc`
+2. 将其中的 `your-domain.com` 和路由域名替换为你的域名
+3. 执行部署
 
-## Configuration
-```javascript
-const BASE_DOMAIN = "your-domain.com";
-const AUTH_DOMAIN = "auth-" + BASE_DOMAIN;
-const CDN_DOMAIN  = "production-" + BASE_DOMAIN;
+```bash
+npx wrangler deploy
+```
+
+## 域名绑定
+
+将以下域名绑定到同一个 Worker：
+
+- `docker.your-domain.com`
+- `auth-docker.your-domain.com`
+- `production-docker.your-domain.com`
+- `ghcr.your-domain.com`
+- `production-ghcr.your-domain.com`
+
+Docker daemon 镜像配置示例：
+
+```json
+{
+  "registry-mirrors": ["https://docker.your-domain.com"]
+}
+```
+
+GHCR 拉取示例：
+
+```bash
+docker pull ghcr.your-domain.com/<owner>/<repo>:<tag>
 ```
 
 ## License

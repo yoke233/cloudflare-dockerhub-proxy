@@ -1,75 +1,134 @@
-// ===== Config =====
-const BASE_DOMAIN = "docker.milu.moe";
-const AUTH_DOMAIN = "auth-" + BASE_DOMAIN;
-const CDN_DOMAIN  = "production-" + BASE_DOMAIN;
+const DEFAULT_ROOT_DOMAIN = "your-domain.com";
 
-const UPSTREAM_REGISTRY = "https://registry-1.docker.io";
-const UPSTREAM_AUTH     = "https://auth.docker.io";
-const UPSTREAM_CDN      = "https://production.cloudflare.docker.com";
+function buildConfig(env) {
+  const rootDomain = (env.ROOT_DOMAIN || DEFAULT_ROOT_DOMAIN).trim().toLowerCase();
 
-// ==================
+  const dockerBase = env.DOCKER_BASE_DOMAIN || `docker.${rootDomain}`;
+  const dockerAuth = env.DOCKER_AUTH_DOMAIN || `auth-${dockerBase}`;
+  const dockerCdn = env.DOCKER_CDN_DOMAIN || `production-${dockerBase}`;
+
+  const ghcrBase = env.GHCR_BASE_DOMAIN || `ghcr.${rootDomain}`;
+  const ghcrCdn = env.GHCR_CDN_DOMAIN || `production-${ghcrBase}`;
+
+  return {
+    domains: {
+      dockerBase,
+      dockerAuth,
+      dockerCdn,
+      ghcrBase,
+      ghcrCdn,
+    },
+    upstream: {
+      dockerRegistry: "https://registry-1.docker.io",
+      dockerAuth: "https://auth.docker.io",
+      dockerCdn: "https://production.cloudflare.docker.com",
+      ghcrRegistry: "https://ghcr.io",
+      ghcrAuth: "https://ghcr.io/token",
+      ghcrCdn: "https://pkg-containers.githubusercontent.com",
+    },
+  };
+}
+
+function resolveTarget(url, config) {
+  const { domains, upstream } = config;
+
+  if (url.hostname === domains.dockerBase) {
+    return new URL(upstream.dockerRegistry + url.pathname + url.search);
+  }
+
+  if (url.hostname === domains.dockerAuth) {
+    return new URL(upstream.dockerAuth + url.pathname + url.search);
+  }
+
+  if (url.hostname === domains.dockerCdn) {
+    return new URL(upstream.dockerCdn + url.pathname + url.search);
+  }
+
+  if (url.hostname === domains.ghcrBase) {
+    if (url.pathname.startsWith("/auth")) {
+      const authPath = url.pathname.slice("/auth".length);
+      return new URL(upstream.ghcrAuth + authPath + url.search);
+    }
+    return new URL(upstream.ghcrRegistry + url.pathname + url.search);
+  }
+
+  if (url.hostname === domains.ghcrCdn) {
+    return new URL(upstream.ghcrCdn + url.pathname + url.search);
+  }
+
+  return null;
+}
+
+function rewriteHeaders(responseHeaders, config) {
+  const { domains, upstream } = config;
+  const headers = new Headers(responseHeaders);
+
+  if (headers.has("WWW-Authenticate")) {
+    const original = headers.get("WWW-Authenticate");
+    if (original) {
+      headers.set(
+        "WWW-Authenticate",
+        original
+          .replaceAll(upstream.dockerAuth, `https://${domains.dockerAuth}`)
+          .replaceAll(upstream.ghcrAuth, `https://${domains.ghcrBase}/auth`)
+      );
+    }
+  }
+
+  if (headers.has("Location")) {
+    const original = headers.get("Location");
+    if (original) {
+      headers.set(
+        "Location",
+        original
+          .replaceAll(upstream.dockerCdn, `https://${domains.dockerCdn}`)
+          .replaceAll(upstream.ghcrCdn, `https://${domains.ghcrCdn}`)
+      );
+    }
+  }
+
+  return headers;
+}
+
+function statusHtml(config) {
+  const { domains } = config;
+  return `
+<h1>Cloudflare DockerHub/GHCR Proxy is Running</h1>
+<h3>Docker Hub</h3>
+<p>Base: ${domains.dockerBase}</p>
+<p>Auth: ${domains.dockerAuth}</p>
+<p>CDN: ${domains.dockerCdn}</p>
+<h3>GHCR</h3>
+<p>Base: ${domains.ghcrBase}</p>
+<p>CDN: ${domains.ghcrCdn}</p>`;
+}
+
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
+    const config = buildConfig(env || {});
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
-      const html =
-        `<h1>🎉 Cloudflare Docker Proxy is Running!</h1>
-         <p>Base: ${BASE_DOMAIN}</p>
-         <p>Auth: ${AUTH_DOMAIN}</p>
-         <p>CDN: ${CDN_DOMAIN}</p>`;
-      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      return new Response(statusHtml(config), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
     }
 
-    let target = null;
-
-    if (url.hostname === BASE_DOMAIN) {
-      // Registry API
-      target = new URL(UPSTREAM_REGISTRY + url.pathname + url.search);
-    } else if (url.hostname === AUTH_DOMAIN) {
-      // Auth API
-      target = new URL(UPSTREAM_AUTH + url.pathname + url.search);
-    } else if (url.hostname === CDN_DOMAIN) {
-      // 镜像层 CDN
-      target = new URL(UPSTREAM_CDN + url.pathname + url.search);
+    const target = resolveTarget(url, config);
+    if (!target) {
+      return new Response(`Host not configured: ${url.hostname}`, { status: 404 });
     }
 
-    // 构造转发请求
     const newRequest = new Request(target, request);
     newRequest.headers.set("Host", target.hostname);
 
-    // 保证流式传输
     const response = await fetch(newRequest);
-
-    // 修改响应头
-    const newHeaders = new Headers(response.headers);
-
-    // 替换认证域名
-    if (newHeaders.has("WWW-Authenticate")) {
-      newHeaders.set(
-        "WWW-Authenticate",
-        newHeaders.get("WWW-Authenticate").replace(
-          UPSTREAM_AUTH,
-          "https://" + AUTH_DOMAIN
-        )
-      );
-    }
-
-    // 替换镜像层 Location 域名
-    if (newHeaders.has("Location")) {
-      newHeaders.set(
-        "Location",
-        newHeaders.get("Location").replace(
-          UPSTREAM_CDN,
-          "https://" + CDN_DOMAIN
-        )
-      );
-    }
+    const headers = rewriteHeaders(response.headers, config);
 
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
-      headers: newHeaders,
+      headers,
     });
   },
 };
